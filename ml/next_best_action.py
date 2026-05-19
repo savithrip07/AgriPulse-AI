@@ -87,8 +87,17 @@ def build_action_rules() -> list:
             4
         ))
     
-    # Sort by priority
+    # Sort by priority (ascending = checked first in assign_action)
     rules.sort(key=lambda x: x[3])
+
+    # Append RECENTLY_VISITED AFTER sort so it's evaluated first (inserted at index 0)
+    # but carries priority=99 so the API sorts it to the bottom
+    rules.insert(0, (
+        lambda r: r.get('days_since_last_visit', 999) <= 1,
+        'RECENTLY_VISITED',
+        'Recently Visited: No action needed today',
+        99
+    ))
     return rules
 
 

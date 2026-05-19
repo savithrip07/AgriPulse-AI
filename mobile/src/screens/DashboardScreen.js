@@ -18,6 +18,7 @@ const ACTION_META = {
   OVERDUE_VISIT:     { color: AppColors.warning,       bg: AppColors.warningLight,  icon: '📅' },
   ANOMALY_ALERT:     { color: AppColors.ANOMALY_ALERT, bg: '#fbe9e7',               icon: '⚡' },
   STANDARD_VISIT:    { color: AppColors.info,          bg: AppColors.infoLight,     icon: '📋' },
+  RECENTLY_VISITED:  { color: AppColors.textMuted,       bg: '#f5f5f5',               icon: '✔️' },
   LOW_PRIORITY:      { color: AppColors.success,       bg: AppColors.successLight,  icon: '✅' },
 };
 

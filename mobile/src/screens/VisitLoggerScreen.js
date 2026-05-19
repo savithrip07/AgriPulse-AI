@@ -86,7 +86,7 @@ export default function VisitLoggerScreen({ route }) {
       
       await queueVisit({
         retailer_id: retailer?.retailer_id || 'UNKNOWN',
-        rep_id: 'REP_0001',
+        rep_id: 'REP_0016',
         outcome_code: outcome,
         product_recommended: product,
         notes,

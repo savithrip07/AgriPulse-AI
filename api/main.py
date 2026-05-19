@@ -2,6 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.routers import reps, retailers, sync, health, config
 from api.core.models import load_models
+from api.core.database import get_db
+from sqlalchemy import text
 import logging
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
@@ -22,6 +24,18 @@ app.add_middleware(
 @app.on_event('startup')
 async def startup():
     load_models()
+    # Add visited_at column if it doesn't exist (migration for timestamp fix)
+    db = next(get_db())
+    try:
+        db.execute(text("""
+            ALTER TABLE retailer_visit_log
+            ADD COLUMN IF NOT EXISTS visited_at TIMESTAMPTZ
+        """))
+        db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
 
 app.include_router(reps.router,      prefix='/api/v1/reps',      tags=['Reps'])
 app.include_router(retailers.router, prefix='/api/v1/retailers', tags=['Retailers'])

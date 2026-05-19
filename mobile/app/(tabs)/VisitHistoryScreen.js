@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, SafeAreaView,
-  TouchableOpacity, Alert, RefreshControl,
+  TouchableOpacity, Alert, RefreshControl, Platform,
 } from 'react-native';
-import { getPendingCount } from '../../src/services/dbService';
+import { getPendingCount, getAllVisits } from '../../src/services/dbService';
 import { syncPendingVisits, checkNetworkStatus } from '../../src/services/syncService';
 import { getApiConfig } from '../../src/services/configService';
 import { AppColors, Shadow } from '../../constants/theme';
@@ -17,12 +17,7 @@ async function fetchVisitsFromRailway() {
   });
   if (!res.ok) return [];
   const data = await res.json();
-  return (data.visits || []).map(v => ({
-    ...v,
-    queue_id: `${v.retailer_id}-${v.visit_date}`,
-    synced: 1,
-    visit_timestamp: v.visit_date,
-  }));
+  return data.visits || [];
 }
 
 const OUTCOME_META = {
@@ -87,10 +82,37 @@ export default function VisitHistoryScreen() {
   const loadVisits = useCallback(async () => {
     const online = await checkNetworkStatus();
     setIsOnline(online);
+    if (online) await syncPendingVisits();
+
+    const local = await getAllVisits();
+    // local queue is the timestamp authority — key by retailer_id+date
+    const localByKey = {};
+    local.forEach(v => {
+      const dateKey = v.visit_timestamp?.slice(0, 10);
+      if (dateKey) localByKey[`${v.retailer_id}-${dateKey}`] = v.visit_timestamp;
+    });
+
+    let allVisits = [...local];
+
     if (online) {
       const remote = await fetchVisitsFromRailway();
-      setVisits(remote);
+      // Map remote rows, use local timestamp if we have it, else visited_at, else visit_date
+      const remoteVisits = remote.map(v => {
+        const key = `${v.retailer_id}-${v.visit_date}`;
+        return {
+          ...v,
+          queue_id: key,
+          synced: 1,
+          visit_timestamp: localByKey[key] || v.visited_at || v.visit_date,
+        };
+      });
+      // Merge: keep all local entries + remote entries not already in local
+      const localKeys = new Set(local.map(v => `${v.retailer_id}-${v.visit_timestamp?.slice(0, 10)}`));
+      const remoteOnly = remoteVisits.filter(v => !localKeys.has(v.queue_id));
+      allVisits = [...local, ...remoteOnly];
     }
+
+    setVisits(allVisits.sort((a, b) => new Date(b.visit_timestamp) - new Date(a.visit_timestamp)));
     setPendingCount(await getPendingCount());
   }, []);
 
@@ -100,9 +122,6 @@ export default function VisitHistoryScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    const online = await checkNetworkStatus();
-    setIsOnline(online);
-    if (online) await syncPendingVisits();
     await loadVisits();
     setRefreshing(false);
   }, [loadVisits]);
@@ -129,6 +148,11 @@ export default function VisitHistoryScreen() {
           <Text style={styles.headerTitle}>Visit History</Text>
           <Text style={styles.headerRep}>👤 REP_0016</Text>
         </View>
+        {Platform.OS === 'web' && (
+          <TouchableOpacity style={styles.refreshBtn} onPress={onRefresh} disabled={refreshing}>
+            <Text style={styles.refreshBtnText}>{refreshing ? '⏳' : '🔄'}</Text>
+          </TouchableOpacity>
+        )}
         <View style={[styles.onlinePill, { backgroundColor: isOnline ? '#a5d6a7' : '#ef9a9a' }]}>
           <View style={[styles.onlineDot, { backgroundColor: isOnline ? AppColors.success : AppColors.danger }]} />
           <Text style={[styles.onlineText, { color: isOnline ? AppColors.success : AppColors.danger }]}>
@@ -205,6 +229,8 @@ const styles = StyleSheet.create({
   onlinePill:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, marginTop: 4 },
   onlineDot:      { width: 7, height: 7, borderRadius: 4, marginRight: 5 },
   onlineText:     { fontSize: 12, fontWeight: '700' },
+  refreshBtn:     { marginRight: 8, padding: 6 },
+  refreshBtnText: { fontSize: 20 },
 
   statsBar:       { flexDirection: 'row', alignItems: 'center', backgroundColor: AppColors.white, paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: AppColors.border },
   statItem:       { flex: 1, alignItems: 'center' },
