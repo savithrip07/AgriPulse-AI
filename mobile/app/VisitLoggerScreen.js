@@ -54,12 +54,13 @@ export default function VisitLoggerScreen() {
     setIsSubmitting(true);
     try {
       await queueVisit({
-        retailer_id: retailer?.retailer_id || 'UNKNOWN',
-        rep_id: 'REP_0016',
-        outcome_code: outcome,
-        product_recommended: product,
-        notes,
-      });
+  retailer_id: retailer?.retailer_id || 'UNKNOWN',
+  rep_id: 'REP_0016',
+  outcome_code: outcome,
+  product_recommended: product,
+  notes,
+  visit_timestamp: new Date().toISOString(),
+});
       const msg = isOnline ? 'Visit saved and syncing…' : 'Saved offline. Will sync when connected.';
       if (Platform.OS === 'web') {
         setSuccessMsg(msg);
