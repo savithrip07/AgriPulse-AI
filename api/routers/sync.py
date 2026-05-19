@@ -49,6 +49,7 @@ def rescore_retailers(
     db.commit()
     return {'updated': updated, 'not_found': not_found}
 
+@router.post('/visits')
 def sync_visits(
     payload: SyncPayload,
     db: Session = Depends(get_db),
