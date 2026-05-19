@@ -1,55 +1,37 @@
 """
-Rescore pipeline - finds recently visited retailers, resets their
-days_since_last_visit, and re-runs SHAP + inference against Railway DB.
+Rescore pipeline - demotes visited retailers to LOW_PRIORITY via the API.
+Usage:
+    python rescore.py RTL_00115
+    python rescore.py RTL_00115 RTL_00120 RTL_00113
 """
-import os
 import sys
-from sqlalchemy import create_engine, text
-from datetime import datetime, timedelta
+import requests
 
-DATABASE_URL = os.environ.get('DATABASE_URL', 'postgresql://agripulse:agripulse123@localhost:5432/agripulse')
-engine = create_engine(DATABASE_URL)
+API_URL = 'https://kisaansakhi-api.onrender.com/api/v1/sync/rescore'
+TOKEN   = 'agripulse-hackathon-secret-key-2026'
 
-# Find tehsils visited in the last 24 hours
-with engine.connect() as conn:
-    rows = conn.execute(text("""
-        SELECT DISTINCT v.rep_id, v.visit_tehsil
-        FROM retailer_visit_log v
-        WHERE v.visit_date >= :since
-    """), {'since': (datetime.now() - timedelta(hours=24)).date()}).fetchall()
+retailer_ids = sys.argv[1:]
 
-visited = [(r[0], r[1]) for r in rows]
+if not retailer_ids:
+    print("Usage: python rescore.py RTL_00115 [RTL_00120 ...]")
+    sys.exit(1)
 
-if not visited:
-    print("No visits logged in the last 24 hours.")
+print(f"Demoting {len(retailer_ids)} retailer(s) to LOW_PRIORITY: {retailer_ids}")
+
+r = requests.post(
+    API_URL,
+    json=retailer_ids,
+    headers={'Authorization': f'Bearer {TOKEN}', 'Content-Type': 'application/json'},
+    timeout=30,
+)
+
+if r.status_code == 200:
+    data = r.json()
+    for rid in data.get('updated', []):
+        print(f"  Demoted {rid} to LOW_PRIORITY")
+    for rid in data.get('not_found', []):
+        print(f"  WARNING: {rid} not found in daily_scores")
+    print("Done. Refresh the app to see updated scores.")
 else:
-    print(f"Found visits in tehsils: {[v[1] for v in visited]}")
-    with engine.connect() as conn:
-        for rep_id, tehsil in visited:
-            result = conn.execute(text("""
-                UPDATE feature_matrix SET days_since_last_visit = 0
-                WHERE retailer_id IN (
-                    SELECT retailer_id FROM retailers WHERE tehsil = :tehsil
-                )
-            """), {'tehsil': tehsil})
-            print(f"  Reset {result.rowcount} retailers in {tehsil}")
-        conn.commit()
-
-# Re-run explain and inference — pass DATABASE_URL explicitly
-import subprocess
-
-env = {**os.environ, 'DATABASE_URL': DATABASE_URL}
-
-print("\n>>> Running ml/explain.py...")
-result = subprocess.run([sys.executable, 'ml/explain.py'], env=env)
-if result.returncode != 0:
-    print("ERROR in ml/explain.py")
+    print(f"ERROR: API returned {r.status_code}: {r.text}")
     sys.exit(1)
-
-print("\n>>> Running ml/inference_pipeline.py...")
-result = subprocess.run([sys.executable, 'ml/inference_pipeline.py'], env=env)
-if result.returncode != 0:
-    print("ERROR in ml/inference_pipeline.py")
-    sys.exit(1)
-
-print("\n✅ Done. Pull to refresh in the app to see updated scores.")

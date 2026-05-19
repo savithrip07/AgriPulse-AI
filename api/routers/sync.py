@@ -25,7 +25,30 @@ class SyncPayload(BaseModel):
     visits: List[VisitRecord]
 
 
-@router.post('/visits')
+@router.post('/rescore')
+def rescore_retailers(
+    retailer_ids: list,
+    db: Session = Depends(get_db),
+    token: str = Depends(verify_token),
+):
+    updated = []
+    not_found = []
+    for retailer_id in retailer_ids:
+        result = db.execute(text("""
+            UPDATE daily_scores
+            SET action_code  = 'LOW_PRIORITY',
+                action_label = 'Low Priority: Recently visited - no action needed',
+                priority     = 4,
+                days_since_last_visit = 0
+            WHERE retailer_id = :rid
+        """), {'rid': retailer_id})
+        if result.rowcount > 0:
+            updated.append(retailer_id)
+        else:
+            not_found.append(retailer_id)
+    db.commit()
+    return {'updated': updated, 'not_found': not_found}
+
 def sync_visits(
     payload: SyncPayload,
     db: Session = Depends(get_db),
@@ -36,15 +59,16 @@ def sync_visits(
         try:
             db.execute(text("""
                 INSERT INTO retailer_visit_log
-                    (rep_id, visit_date, territory_id, visit_tehsil, visit_type, product_recommended)
+                    (rep_id, visit_date, visited_at, territory_id, visit_tehsil, visit_type, product_recommended)
                 SELECT
-                    :rep_id, :visit_date, r.territory_id, r.tehsil, :visit_type, :product
+                    :rep_id, :visit_date, :visited_at, r.territory_id, r.tehsil, :visit_type, :product
                 FROM retailers r
                 WHERE r.retailer_id = :retailer_id
                 LIMIT 1
             """), {
                 'rep_id':      visit.rep_id,
                 'visit_date':  visit.visit_timestamp[:10],
+                'visited_at':  visit.visit_timestamp,
                 'visit_type':  visit.outcome_code or 'retailer meeting',
                 'product':     visit.product_recommended or '',
                 'retailer_id': visit.retailer_id,
@@ -67,12 +91,14 @@ def get_visit_history(
     token: str = Depends(verify_token),
 ):
     rows = db.execute(text("""
-        SELECT v.rep_id, r.retailer_id, v.visit_date, v.visit_type as outcome_code,
+        SELECT v.rep_id, r.retailer_id, v.visit_date,
+               COALESCE(v.visited_at::text, v.visit_date::text) as visited_at,
+               v.visit_type as outcome_code,
                v.product_recommended, v.territory_id, r.tehsil
         FROM retailer_visit_log v
         JOIN retailers r ON r.tehsil = v.visit_tehsil AND r.territory_id = v.territory_id
         WHERE v.rep_id = :rep_id
-        ORDER BY v.visit_date DESC
+        ORDER BY COALESCE(v.visited_at, v.visit_date::timestamp) DESC
         LIMIT 50
     """), {'rep_id': rep_id}).fetchall()
     return {'visits': [dict(r._mapping) for r in rows]}
