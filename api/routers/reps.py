@@ -20,6 +20,7 @@ def get_priority_list(
     if score_date is None:
         score_date = str(date.today())
 
+    # Fall back to latest available score_date if no data for requested date
     rows = db.execute(text("""
         SELECT
             retailer_id, territory_id, tehsil, district, state,
@@ -31,7 +32,10 @@ def get_priority_list(
             score_date
         FROM daily_scores
         WHERE rep_id = :rep_id
-          AND score_date = :score_date
+          AND score_date = COALESCE(
+              NULLIF((SELECT score_date FROM daily_scores WHERE rep_id = :rep_id AND score_date = :score_date LIMIT 1), NULL),
+              (SELECT MAX(score_date) FROM daily_scores WHERE rep_id = :rep_id)
+          )
         ORDER BY priority ASC, opportunity_score DESC
         LIMIT :limit
     """), {'rep_id': rep_id, 'score_date': score_date, 'limit': limit}).fetchall()

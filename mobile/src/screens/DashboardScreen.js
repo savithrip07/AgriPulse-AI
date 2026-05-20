@@ -84,8 +84,7 @@ export default function DashboardScreen() {
       const currentRepId = await getCurrentRepId();
       setRepId(currentRepId);
       const { baseUrl, token } = await getApiConfig();
-      const scoreDate = new Date().toISOString().split('T')[0];
-      const res = await fetch(`${baseUrl}/reps/${currentRepId}/priority-list?score_date=${scoreDate}`, {
+      const res = await fetch(`${baseUrl}/reps/${currentRepId}/priority-list`, {
         headers: { authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error(`${res.status}`);
@@ -118,7 +117,7 @@ export default function DashboardScreen() {
     if (online) {
       await syncPendingVisits();
       const id = await getCurrentRepId();
-      await pullDeltaScores(id, new Date().toISOString().split('T')[0]);
+      await pullDeltaScores(id);
       await loadFromAPI();
     } else await loadFromStorage();
     setPendingCount(await getPendingCount());
